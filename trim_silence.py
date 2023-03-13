@@ -1,70 +1,62 @@
-#!/usr/bin/env python
+import argparse
+from moviepy.video.io.VideoFileClip import VideoFileClip
+from moviepy.audio.io.AudioFileClip import AudioFileClip
 
-import sys
-import subprocess
-import os
-import shutil
-from moviepy.editor import VideoFileClip, concatenate_videoclips
+# Args
+parser = argparse.ArgumentParser(description='Detect and remove silence from a video file.')
+parser.add_argument('input', help='path to input video file')
+parser.add_argument('output', help='path to output video file')
+parser.add_argument('--threshold', type=int, default=-40,
+                    help='threshold for silence detection in dB (default: -40)')
 
-# Input file path
-file_in = sys.argv[1]
-# Output file path
-file_out = sys.argv[2]
-# Silence timestamps
-silence_file = sys.argv[3]
+# Parse arguments
+args = parser.parse_args()
 
-# Ease in duration between cuts
-try:
-    ease = float(sys.argv[4])
-except IndexError:
-    ease = 0.0
+# Open the video file and extract the audio track
+input_video_path = args.input
+output_video_path = args.output
+video_clip = VideoFileClip(input_video_path)
+audio_clip = video_clip.audio
 
-minimum_duration = 1.0
+# Calculate the average volume of the audio track
+avg_volume = audio_clip.audio_norm_db
 
-def main():
-    # start of next clip
-    last = 0
+# Set the silence detection threshold
+silence_threshold = args.threshold
 
-    with open(silence_file, "r", errors='replace') as in_handle:
-        timestamps = [tuple(map(float, line.strip().split())) for line in in_handle.readlines()]
+# Initialize variables for keeping track of silence periods
+silence_start = None
+silence_end = None
 
-    video = VideoFileClip(file_in)
-    full_duration = video.duration
-    clips = []
-    for i, (end, duration) in enumerate(timestamps):
-        to = end - duration
+# Iterate over the audio frames and detect silence periods
+for t, frame in enumerate(audio_clip.iter_frames()):
+    volume = audio_clip.get_frame(t, 'dB')
+    if volume < silence_threshold:
+        if silence_start is None:
+            silence_start = t
+    else:
+        if silence_start is not None:
+            silence_end = t
+            # Remove the silence period from the audio and video clips
+            start_time = silence_start / audio_clip.fps
+            end_time = silence_end / audio_clip.fps
+            audio_clip = audio_clip.subclip(0, start_time).\
+                         append(audio_clip.subclip(end_time))
+            video_clip = video_clip.subclip(0, start_time).\
+                         append(video_clip.subclip(end_time))
+            silence_start = None
+            silence_end = None
 
-        start = last
-        clip_duration = to - start
-        # Clips less than one seconds don't seem to work
-        print("Clip Duration: {} seconds".format(clip_duration))
+# Write the new audio file without silence periods
+cut_audio_path = 'cut_audio.wav'
+audio_clip.write_audiofile(cut_audio_path)
 
-        if clip_duration < minimum_duration:
-            continue
+# Use the new audio file to generate a new video clip without silence
+new_video_clip = video_clip.set_audio(AudioFileClip(cut_audio_path))
+new_video_clip.write_videofile(output_video_path)
 
-        if full_duration - to < minimum_duration:
-            continue
-
-        if start > ease:
-            start -= ease
-
-        print("Clip {} (Start: {}, End: {})".format(i, start, to))
-        clip = video.subclip(start, to)
-        clips.append(clip)
-        last = end
-
-    if full_duration - last > minimum_duration:
-        print("Clip {} (Start: {}, End: {})".format(len(timestamps), last, 'EOF'))
-        clips.append(video.subclip(last-ease))
-
-    processed_video = concatenate_videoclips(clips)
-    processed_video.write_videofile(
-        file_out,
-        fps=30,
-        preset='ultrafast',
-        codec='libx265'
-    )
-
-    video.close()
-
-main()
+# Clean up temporary files
+video_clip.close()
+new_video_clip.close()
+audio_clip.close()
+os.remove(cut_audio_path)
