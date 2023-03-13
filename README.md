@@ -1,7 +1,7 @@
 # TrimSilence 🤫🎬
 ### Cut out silence from a video file, generating a new video without the silent parts.
 
-The script takes a video file path, an output file path, and a file containing the timestamps of the silent parts of the video as input. It then uses the MoviePy library to split the video into clips at the points of silence, and concatenates the remaining clips to create a new video file without the silent parts. The --threshold option sets the volume threshold below which a frame is considered silent. You can adjust this value to fine-tune the silence detection.
+The script takes a video file path, an output file path, and a threshold value as input. It then uses the MoviePy library to split the video into clips at the points of silence, and concatenates the remaining clips to create a new video file without the silent parts. The --threshold option sets the volume threshold below which a frame is considered silent. You can adjust this value to fine-tune the silence detection.
 
 #### Dependencies
 - Python 3.6 or higher
